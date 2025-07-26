@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -66,6 +67,12 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 var ErrorNoSuchKey = errors.New("no such key")
 
 func PutKeyValue(key, value string) error {
+	if len(key) > MaxKeySize {
+		return fmt.Errorf("key exceeds maximum size of %d bytes", MaxKeySize)
+	}
+	if len(value) > MaxValueSize {
+		return fmt.Errorf("value exceeds maximum size of %d bytes", MaxValueSize)
+	}
 	store.Lock()
 	defer store.Unlock()
 
@@ -87,6 +94,9 @@ func GetKeyValue(key string) (string, error) {
 }
 
 func DeleteKeyValue(key string) error {
+	if len(key) > MaxKeySize {
+		return fmt.Errorf("key exceeds maximum size of %d bytes", MaxKeySize)
+	}
 	store.Lock()
 	defer store.Unlock()
 

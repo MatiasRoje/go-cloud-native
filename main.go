@@ -16,6 +16,8 @@ func main() {
 		log.Fatal(err)
 	}
 
+	defer logger.Close()
+
 	r := mux.NewRouter()
 	api := r.PathPrefix("/api/v1").Subrouter()
 

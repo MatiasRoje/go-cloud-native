@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 )
@@ -25,17 +27,22 @@ func NewFileTransactionLogger(filename string) (*FileTransactionLogger, error) {
 }
 
 func (l *FileTransactionLogger) WritePut(key, value string) {
+	encodedKey := base64.StdEncoding.EncodeToString([]byte(key))
+	encodedValue := base64.StdEncoding.EncodeToString([]byte(value))
+
 	l.events <- Event{
 		EventType: EventPut,
-		Key:       key,
-		Value:     value,
+		Key:       encodedKey,
+		Value:     encodedValue,
 	}
 }
 
 func (l *FileTransactionLogger) WriteDelete(key string) {
+	encodedKey := base64.StdEncoding.EncodeToString([]byte(key))
+
 	l.events <- Event{
 		EventType: EventDelete,
-		Key:       key,
+		Key:       encodedKey,
 	}
 }
 
@@ -54,8 +61,15 @@ func (l *FileTransactionLogger) Run() {
 		for event := range events {
 
 			l.lastSequence++
+			event.Sequence = l.lastSequence
 
-			_, err := fmt.Fprintf(l.file, "%d\t%d\t%s\t%s\n", l.lastSequence, event.EventType, event.Key, event.Value)
+			jsonLine, err := json.Marshal(event)
+			if err != nil {
+				errors <- fmt.Errorf("json marshal error: %w", err)
+				return
+			}
+
+			_, err = fmt.Fprintf(l.file, "%s\n", jsonLine)
 			if err != nil {
 				errors <- err
 				return
@@ -70,15 +84,31 @@ func (l *FileTransactionLogger) ReadEvents() (<-chan Event, <-chan error) {
 	outError := make(chan error, 1)
 
 	go func() {
-		var event Event
 		defer close(outEvent)
 		defer close(outError)
 		for scanner.Scan() {
+			var event Event
 			line := scanner.Text()
 
-			if _, err := fmt.Sscanf(line, "%d\t%d\t%s\t%s", &event.Sequence, &event.EventType, &event.Key, &event.Value); err != nil {
-				outError <- fmt.Errorf("input parse error: %w", err)
+			if err := json.Unmarshal([]byte(line), &event); err != nil {
+				outError <- fmt.Errorf("json unmarshal error: %w", err)
 				return
+			}
+
+			decodedKey, err := base64.StdEncoding.DecodeString(event.Key)
+			if err != nil {
+				outError <- fmt.Errorf("key decode error: %w", err)
+				return
+			}
+			event.Key = string(decodedKey)
+
+			if event.EventType == EventPut {
+				decodedValue, err := base64.StdEncoding.DecodeString(event.Value)
+				if err != nil {
+					outError <- fmt.Errorf("value decode error: %w", err)
+					return
+				}
+				event.Value = string(decodedValue)
 			}
 
 			// Sanity check! Are the sequence numbers in increasing order?
@@ -99,4 +129,11 @@ func (l *FileTransactionLogger) ReadEvents() (<-chan Event, <-chan error) {
 	}()
 
 	return outEvent, outError
+}
+
+func (l *FileTransactionLogger) Close() error {
+	if l.file != nil {
+		return l.file.Close()
+	}
+	return nil
 }
