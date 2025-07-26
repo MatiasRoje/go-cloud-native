@@ -5,11 +5,19 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sync"
 
 	"github.com/gorilla/mux"
 )
 
-var store = make(map[string]string)
+type LockableMap struct {
+	sync.RWMutex
+	m map[string]string
+}
+
+var store = &LockableMap{
+	m: make(map[string]string),
+}
 
 func main() {
 	r := mux.NewRouter()
@@ -77,14 +85,19 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 var ErrorNoSuchKey = errors.New("no such key")
 
 func PutKeyValue(key, value string) error {
-	store[key] = value
+	store.Lock()
+	defer store.Unlock()
+
+	store.m[key] = value
 
 	return nil
 }
 
 func GetKeyValue(key string) (string, error) {
-	value, ok := store[key]
+	store.RLock()
+	defer store.RUnlock()
 
+	value, ok := store.m[key]
 	if !ok {
 		return "", ErrorNoSuchKey
 	}
@@ -93,7 +106,10 @@ func GetKeyValue(key string) (string, error) {
 }
 
 func DeleteKeyValue(key string) error {
-	delete(store, key)
+	store.Lock()
+	defer store.Unlock()
+
+	delete(store.m, key)
 
 	return nil
 }
