@@ -1,25 +1,21 @@
 package main
 
 import (
-	"errors"
-	"io"
+	"fmt"
 	"log"
 	"net/http"
-	"sync"
 
 	"github.com/gorilla/mux"
 )
 
-type LockableMap struct {
-	sync.RWMutex
-	m map[string]string
-}
-
-var store = &LockableMap{
-	m: make(map[string]string),
-}
+var logger TransactionLogger
 
 func main() {
+	err := initializeTransactionLog()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	r := mux.NewRouter()
 	api := r.PathPrefix("/api/v1").Subrouter()
 
@@ -30,86 +26,32 @@ func main() {
 	log.Fatal(http.ListenAndServe(":8080", r))
 }
 
-// Handlers
-// PUT {api-prefix}/key/{key}
-func putHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	key := vars["key"]
-
-	value, err := io.ReadAll(r.Body) // The request body has our value
+func initializeTransactionLog() error {
+	var err error
+	logger, err = NewFileTransactionLogger("transaction.log")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer r.Body.Close()
-
-	err = PutKeyValue(key, string(value))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return fmt.Errorf("cannot initialize transaction logger: %w", err)
 	}
 
-	w.WriteHeader(http.StatusCreated)
-}
+	events, errors := logger.ReadEvents()
 
-// GET {api-prefix}/key/{key}
-func getHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	key := vars["key"]
+	event := Event{}
+	ok := true
 
-	value, err := GetKeyValue(key)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	for ok && err == nil {
+		select {
+		case err, ok = <-errors:
+		case event, ok = <-events:
+			switch event.EventType {
+			case EventDelete:
+				err = DeleteKeyValue(event.Key)
+			case EventPut:
+				err = PutKeyValue(event.Key, event.Value)
+			}
+		}
 	}
 
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(value))
-}
-
-// DELETE {api-prefix}/key/{key}
-func deleteHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	key := vars["key"]
-
-	err := DeleteKeyValue(key)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// Helpers
-var ErrorNoSuchKey = errors.New("no such key")
-
-func PutKeyValue(key, value string) error {
-	store.Lock()
-	defer store.Unlock()
-
-	store.m[key] = value
-
-	return nil
-}
-
-func GetKeyValue(key string) (string, error) {
-	store.RLock()
-	defer store.RUnlock()
-
-	value, ok := store.m[key]
-	if !ok {
-		return "", ErrorNoSuchKey
-	}
-
-	return value, nil
-}
-
-func DeleteKeyValue(key string) error {
-	store.Lock()
-	defer store.Unlock()
-
-	delete(store.m, key)
+	logger.Run()
 
 	return nil
 }
