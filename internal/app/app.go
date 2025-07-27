@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/MatiasRoje/go-cloud-native/internal/config"
 	"github.com/MatiasRoje/go-cloud-native/internal/models"
 	"github.com/MatiasRoje/go-cloud-native/internal/storage"
 )
@@ -8,4 +9,5 @@ import (
 type App struct {
 	Logger storage.TransactionLogger
 	Store  *models.LockableMap
+	Config *config.Config
 }
