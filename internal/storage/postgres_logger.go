@@ -3,12 +3,13 @@ package storage
 import (
 	"database/sql"
 	"fmt"
+	"log"
 
 	"github.com/MatiasRoje/go-cloud-native/internal/config"
 )
 
 type PostgresTransactionLogger struct {
-	events chan<- Event // Write-only channel for sendings events
+	events chan<- Event // Write-only channel for sending events
 	errors <-chan error // Read-only channel for receiving errors
 	db     *sql.DB
 	params PostgresDBParams
@@ -51,15 +52,9 @@ func NewPostgresTransactionLogger(cfg *config.Config) (*PostgresTransactionLogge
 		},
 	}
 
-	exists, err := logger.verifyTableExists(logger.params.DBName)
+	err = logger.initializeTransactionsTable()
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify if table exists: %w", err)
-	}
-
-	if !exists {
-		if err = logger.createTable(logger.params.DBName); err != nil {
-			return nil, fmt.Errorf("failed to create table: %w", err)
-		}
 	}
 
 	return logger, nil
@@ -84,21 +79,21 @@ func (l *PostgresTransactionLogger) Err() <-chan error {
 	return l.errors
 }
 
-func (l *PostgresTransactionLogger) verifyTableExists(tableName string) (bool, error) {
-	var exists bool
+func (l *PostgresTransactionLogger) initializeTransactionsTable() error {
+	query := `
+		CREATE TABLE IF NOT EXISTS transactions (
+			id SERIAL PRIMARY KEY,
+			event_type VARCHAR(10),
+			key VARCHAR(255),
+			value VARCHAR(255) 
+		)
+	`
 
-	if err := l.db.QueryRow("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = ?)", tableName).Scan(&exists); err != nil {
-		return false, fmt.Errorf("failed to verify if table exists: %w", err)
+	if _, err := l.db.Exec(query); err != nil {
+		return fmt.Errorf("error creating transactions table: %w", err)
 	}
 
-	return exists, nil
-}
-
-func (l *PostgresTransactionLogger) createTable(tableName string) error {
-	if _, err := l.db.Exec("CREATE TABLE IF NOT EXISTS " + tableName + " (id SERIAL PRIMARY KEY, event_type VARCHAR(10), key VARCHAR(255), value VARCHAR(255))"); err != nil {
-		return fmt.Errorf("failed to create table: %w", err)
-	}
-
+	log.Println("Transactions table successfully initialized")
 	return nil
 }
 
@@ -110,7 +105,7 @@ func (l *PostgresTransactionLogger) Run() {
 	l.errors = errors
 
 	go func() {
-		query := "INSERT INTO " + l.params.DBName + " (event_type, key, value) VALUES (?, ?, ?)"
+		query := "INSERT INTO transactions (event_type, key, value) VALUES ($1, $2, $3)"
 		for event := range events {
 			_, err := l.db.Exec(query, event.EventType, event.Key, event.Value)
 			if err != nil {
@@ -128,7 +123,7 @@ func (l *PostgresTransactionLogger) ReadEvents() (<-chan Event, <-chan error) {
 		defer close(outEvent)
 		defer close(outError)
 
-		query := "SELECT event_type, key, value FROM " + l.params.DBName + " ORDER BY id"
+		query := "SELECT event_type, key, value FROM transactions ORDER BY id"
 		rows, err := l.db.Query(query)
 		if err != nil {
 			outError <- fmt.Errorf("sql query error: %w", err)
@@ -152,4 +147,12 @@ func (l *PostgresTransactionLogger) ReadEvents() (<-chan Event, <-chan error) {
 	}()
 
 	return outEvent, outError
+}
+
+func (l *PostgresTransactionLogger) Close() error {
+	if l.db != nil {
+		return l.db.Close()
+	}
+
+	return nil
 }

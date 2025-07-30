@@ -13,16 +13,16 @@ import (
 )
 
 func main() {
-	logger, err := storage.InitLogger("transaction.log", "file")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer logger.Close()
-
 	config, err := config.LoadConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	logger, err := storage.InitLogger("transaction.log", "postgres", config)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer logger.Close()
 
 	// NOTE: We could move some of this logic to the app package and do something like app.Run() here
 	app := &app.App{

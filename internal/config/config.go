@@ -19,9 +19,9 @@ func LoadConfig() (*Config, error) {
 	return &Config{
 		DBHost:     getEnvWithDefault("DB_HOST", "localhost"),
 		DBPort:     getEnvWithDefault("DB_PORT", "5432"),
-		DBUser:     getEnvWithDefault("DB_USER", "postgres"),
-		DBPassword: getEnvWithDefault("DB_PASSWORD", "postgres"),
-		DBName:     getEnvWithDefault("DB_NAME", "transactions"),
+		DBUser:     getEnvWithDefault("DB_USER", "gouser"),
+		DBPassword: getEnvWithDefault("DB_PASSWORD", "go123"),
+		DBName:     getEnvWithDefault("DB_NAME", "go_cloud_native"),
 	}, nil
 }
 

@@ -3,7 +3,9 @@ package storage
 import (
 	"fmt"
 
+	"github.com/MatiasRoje/go-cloud-native/internal/config"
 	"github.com/MatiasRoje/go-cloud-native/internal/models"
+	_ "github.com/lib/pq"
 )
 
 type EventType byte
@@ -33,7 +35,7 @@ type TransactionLogger interface {
 	Close() error
 }
 
-func InitLogger(path, loggerType string) (TransactionLogger, error) {
+func InitLogger(path, loggerType string, cfg *config.Config) (TransactionLogger, error) {
 	var logger TransactionLogger
 	var err error
 	switch loggerType {
@@ -65,8 +67,33 @@ func InitLogger(path, loggerType string) (TransactionLogger, error) {
 
 		return logger, nil
 	case "postgres":
-		// TODO:
-		return nil, fmt.Errorf("postgres logger not implemented")
+
+		logger, err = NewPostgresTransactionLogger(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("cannon initialize postgres transaction logger: %w", err)
+		}
+
+		events, errors := logger.ReadEvents()
+
+		event := Event{}
+		ok := true
+
+		for ok && err == nil {
+			select {
+			case err, ok = <-errors:
+			case event, ok = <-events:
+				switch event.EventType {
+				case EventDelete:
+					err = models.DeleteKeyValue(event.Key)
+				case EventPut:
+					err = models.PutKeyValue(event.Key, event.Value)
+				}
+			}
+		}
+
+		logger.Run()
+
+		return logger, nil
 	default:
 		return nil, fmt.Errorf("unknown logger type: %s", loggerType)
 	}
