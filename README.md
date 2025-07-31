@@ -8,7 +8,6 @@ Most of the code is adapted from the book, with additionals improvements and enh
 
 - Add tests
 - Add logs
-- Add Postman calls for sake of brevity
 
 ## Improvements
 
@@ -26,9 +25,9 @@ As suggested by the book, the code was extended as follows. Some features were s
 
   - Implement helper functions to create and verify the transactions table.
   - Move database connection parameters (host, port, user, passwrod, dbname) to configuration (not hardcoded).
-  - TODO: Add a close method to clean up open database connections.
-  - TODO: Ensure all events in the write buffer are flushed to the databse before shutdown (prevent event loss).
-  - TODO: Consider implementing log retention or pruning to prevent unbounded growth of the transactions table.
+  - Add a close method to clean up open database connections.
+  - _(Skipped)_ Ensure all events in the write buffer are flushed to the database before shutdown (prevent event loss).
+  - _(Skipped)_ Consider implementing log retention or pruning to prevent unbounded growth of the transactions table.
   - TODO: Improve error handling and reporting, specially for database operations.
 
 - **_TLS_**:
